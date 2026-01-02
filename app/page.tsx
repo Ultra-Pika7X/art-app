@@ -11,7 +11,10 @@ import {
   Download,
   Square,
   Minus,
-  Plus
+  Plus,
+  Pen,
+  Highlighter,
+  SprayCan
 } from 'lucide-react';
 
 const COLORS = [
@@ -30,6 +33,7 @@ export default function Home() {
   const [color, setColor] = useState('#ffffff');
   const [brushSize, setBrushSize] = useState(5);
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
+  const [brushType, setBrushType] = useState<'pen' | 'marker' | 'spray'>('pen');
 
   const [undoAvailable, setUndoAvailable] = useState(false);
   const [redoAvailable, setRedoAvailable] = useState(false);
@@ -102,6 +106,7 @@ export default function Home() {
         color={color}
         brushSize={brushSize}
         tool={tool}
+        brushType={brushType}
         onUndoAvailable={setUndoAvailable}
         onRedoAvailable={setRedoAvailable}
         clearTrigger={clearTrigger}
@@ -113,11 +118,37 @@ export default function Home() {
       {/* Bottom Toolbar - Brush Controls */}
       <div className="toolbar glass">
         <button
-          className={`icon-button ${tool === 'brush' ? 'active' : ''}`}
-          onClick={() => setTool('brush')}
+          className={`icon-button ${tool === 'brush' && brushType === 'pen' ? 'active' : ''}`}
+          onClick={() => {
+            setTool('brush');
+            setBrushType('pen');
+          }}
+          title="Pen"
         >
-          <Paintbrush size={20} />
+          <Pen size={20} />
         </button>
+        <button
+          className={`icon-button ${tool === 'brush' && brushType === 'marker' ? 'active' : ''}`}
+          onClick={() => {
+            setTool('brush');
+            setBrushType('marker');
+          }}
+          title="Marker"
+        >
+          <Highlighter size={20} />
+        </button>
+        <button
+          className={`icon-button ${tool === 'brush' && brushType === 'spray' ? 'active' : ''}`}
+          onClick={() => {
+            setTool('brush');
+            setBrushType('spray');
+          }}
+          title="Spray"
+        >
+          <SprayCan size={20} />
+        </button>
+
+        <div style={{ width: '1px', background: 'var(--border)', height: '24px', margin: '0 0.5rem' }} />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0 1rem' }}>
           <Minus

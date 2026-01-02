@@ -6,6 +6,7 @@ interface CanvasProps {
   color: string;
   brushSize: number;
   tool: 'brush' | 'eraser';
+  brushType?: 'pen' | 'marker' | 'spray';
   onUndoAvailable: (available: boolean) => void;
   onRedoAvailable: (available: boolean) => void;
   clearTrigger: number;
@@ -18,6 +19,7 @@ const Canvas: React.FC<CanvasProps> = ({
   color,
   brushSize,
   tool,
+  brushType = 'pen',
   onUndoAvailable,
   onRedoAvailable,
   clearTrigger,
@@ -77,13 +79,47 @@ const Canvas: React.FC<CanvasProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Update context properties when color or brush size changes
+  // Update context properties when color, brush size, tool, or brush type changes
   useEffect(() => {
     if (contextRef.current) {
-      contextRef.current.strokeStyle = tool === 'eraser' ? '#050505' : color;
+      if (tool === 'eraser') {
+        contextRef.current.globalCompositeOperation = 'source-over';
+        contextRef.current.strokeStyle = '#050505';
+        contextRef.current.globalAlpha = 1;
+        contextRef.current.shadowBlur = 0;
+        contextRef.current.lineCap = 'round';
+        contextRef.current.lineJoin = 'round';
+      } else {
+        contextRef.current.globalCompositeOperation = 'source-over';
+        contextRef.current.strokeStyle = color;
+        contextRef.current.fillStyle = color;
+
+        switch (brushType) {
+          case 'marker':
+            contextRef.current.globalAlpha = 0.5;
+            contextRef.current.shadowBlur = 0;
+            contextRef.current.lineCap = 'square';
+            contextRef.current.lineJoin = 'bevel';
+            break;
+          case 'spray':
+            contextRef.current.globalAlpha = 1;
+            contextRef.current.shadowBlur = brushSize / 2; // Soft edges for spray
+            contextRef.current.shadowColor = color;
+            contextRef.current.lineCap = 'round';
+            contextRef.current.lineJoin = 'round';
+            break;
+          case 'pen':
+          default:
+            contextRef.current.globalAlpha = 1;
+            contextRef.current.shadowBlur = 0;
+            contextRef.current.lineCap = 'round';
+            contextRef.current.lineJoin = 'round';
+            break;
+        }
+      }
       contextRef.current.lineWidth = brushSize;
     }
-  }, [color, brushSize, tool]);
+  }, [color, brushSize, tool, brushType]);
 
   const saveToHistory = useCallback(() => {
     const canvas = canvasRef.current;
@@ -92,14 +128,14 @@ const Canvas: React.FC<CanvasProps> = ({
     const dataUrl = canvas.toDataURL();
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(dataUrl);
-    
+
     // Limit history size to 50 steps
     if (newHistory.length > 50) {
       newHistory.shift();
     } else {
       setHistoryIndex(newHistory.length - 1);
     }
-    
+
     setHistory(newHistory);
   }, [history, historyIndex]);
 
@@ -116,10 +152,13 @@ const Canvas: React.FC<CanvasProps> = ({
       if (canvas && context) {
         context.fillStyle = '#050505';
         context.fillRect(0, 0, canvas.width, canvas.height);
+        context.shadowBlur = 0; // Reset shadow for clear
         saveToHistory();
+        // Restore context state
+        context.fillStyle = color;
       }
     }
-  }, [clearTrigger, saveToHistory]);
+  }, [clearTrigger, saveToHistory, color]);
 
   // Handle undo trigger
   useEffect(() => {
@@ -128,6 +167,7 @@ const Canvas: React.FC<CanvasProps> = ({
       const img = new Image();
       img.src = history[newIndex];
       img.onload = () => {
+        contextRef.current?.clearRect(0, 0, contextRef.current.canvas.width, contextRef.current.canvas.height);
         contextRef.current?.drawImage(img, 0, 0);
         setHistoryIndex(newIndex);
       };
@@ -141,6 +181,7 @@ const Canvas: React.FC<CanvasProps> = ({
       const img = new Image();
       img.src = history[newIndex];
       img.onload = () => {
+        contextRef.current?.clearRect(0, 0, contextRef.current.canvas.width, contextRef.current.canvas.height);
         contextRef.current?.drawImage(img, 0, 0);
         setHistoryIndex(newIndex);
       };
@@ -162,21 +203,54 @@ const Canvas: React.FC<CanvasProps> = ({
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     const { x, y } = getCoordinates(e);
+    setIsDrawing(true);
+
+    if (tool === 'brush' && brushType === 'spray') {
+      spray(x, y);
+      return;
+    }
+
     contextRef.current?.beginPath();
     contextRef.current?.moveTo(x, y);
-    setIsDrawing(true);
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDrawing) return;
     const { x, y } = getCoordinates(e);
+
+    if (tool === 'brush' && brushType === 'spray') {
+      spray(x, y);
+      return;
+    }
+
     contextRef.current?.lineTo(x, y);
     contextRef.current?.stroke();
   };
 
+  const spray = (x: number, y: number) => {
+    const ctx = contextRef.current;
+    if (!ctx) return;
+
+    const density = brushSize * 2;
+
+    for (let i = 0; i < density; i++) {
+      const offset = brushSize / 2;
+      const offsetX = (Math.random() - 0.5) * offset * 2;
+      const offsetY = (Math.random() - 0.5) * offset * 2;
+
+      // Circular spray pattern
+      if (offsetX * offsetX + offsetY * offsetY <= offset * offset) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x + offsetX, y + offsetY, 1, 1);
+      }
+    }
+  };
+
   const endDrawing = () => {
     if (isDrawing) {
-      contextRef.current?.closePath();
+      if (tool === 'brush' && brushType !== 'spray') {
+        contextRef.current?.closePath();
+      }
       setIsDrawing(false);
       saveToHistory();
     }
@@ -213,7 +287,12 @@ const Canvas: React.FC<CanvasProps> = ({
       onTouchStart={startDrawing}
       onTouchMove={draw}
       onTouchEnd={endDrawing}
-      style={{ cursor: tool === 'brush' ? 'crosshair' : 'cell' }}
+      style={{
+        cursor: tool === 'brush'
+          ? brushType === 'spray' ? 'crosshair' : 'crosshair'
+          : 'cell',
+        touchAction: 'none' // Prevent scrolling while drawing
+      }}
     />
   );
 };
